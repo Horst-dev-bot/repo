@@ -1,0 +1,90 @@
+# OpenReview（GMI）测试仓库
+
+本仓库用来验证 GitHub App **[gmi-openreview](https://github.com/apps/gmi-openreview)** 是否能在 Pull Request 上被唤醒并完成一次审阅。
+
+它**不是** OpenReview 服务本身，也**不是** App 的代码托管仓。服务跑在独立的 OpenReview 实例上；这个仓只提供「安装 App → 开 PR → 评论触发」的靶场。
+
+已知可用靶场：[`Horst-lgtm/qemu-learning`](https://github.com/Horst-lgtm/qemu-learning)（安装 ID `162409296`）。任何已安装本 App 的仓库都可以按同样步骤测。
+
+## App 是身份，不是托管
+
+| 项 | 值 |
+|---|---|
+| App | [gmi-openreview](https://github.com/apps/gmi-openreview) |
+| App ID | `4974933` |
+| 所有者 | [Horst-lgtm](https://github.com/Horst-lgtm)（账号级 App） |
+| 安装入口 | https://github.com/apps/gmi-openreview/installations/new |
+| 唤醒写法 | **`@gmi-openreview`**（App slug；GitHub 也可能显示成 `gmi-openreview[bot]`） |
+| Webhook | `http://35.206.119.23:3000/api/webhooks`（所有安装共用这一条） |
+
+不要写 `@openreview`。上游开源项目的文档用那个名字；我们这套实例的 slug 是 **`gmi-openreview`**。
+
+## 当前可见性
+
+App 目前仍是 **Only this account / 私有**：只有 **Horst-lgtm** 能安装。其他 GitHub 账号或 Org 在所有者点 **Make public** 之前无法安装。
+
+公开（仅所有者 Horst-lgtm 能点）：
+
+1. 用 Horst-lgtm 登录 GitHub  
+2. **Settings → Developer settings → GitHub Apps → gmi-openreview**  
+3. **Advanced → Make public** → 确认  
+
+公开后，任意账号打开[安装入口](https://github.com/apps/gmi-openreview/installations/new)即可装到自己的仓。每个账号/组织会得到**新的** installation id；不必改 webhook。
+
+## 安装到测试仓
+
+1. 打开 https://github.com/apps/gmi-openreview/installations/new  
+2. 选择账号或有权限的 Org  
+3. 勾选**本测试仓库**（或 All repositories）  
+4. 确认权限（审阅需要能读代码、读写 Issue / PR）
+
+需要订阅的仓库事件（App 设置里）：
+
+- **Issue comments**（PR Conversation 里的评论走这个）
+- **Pull request review comments**（代码行上的 review 评论）
+
+权限侧至少：**Metadata** 读，**Contents / Issues / Pull requests** 读写。
+
+只开 PR、不评论，**不会**自动审。Webhook 只处理上述两类「评论创建」事件，且 Issue 评论必须挂在 **PR** 上（普通 Issue 上的评论会被忽略）。
+
+## 怎么触发一次审阅
+
+1. 确认本仓已安装 **gmi-openreview**（仓库 **Settings → Integrations → GitHub Apps**）。  
+2. 从默认分支拉一个小改动，打开 Pull Request。  
+3. 在 PR 的 **Conversation** 里发一条评论（或在 Files changed 里留一条 review 评论），正文包含：
+
+```text
+@gmi-openreview 看一下这次改动
+```
+
+可以跟具体指令，例如「只查安全问题」「解释认证流程」。GitHub 自动补全出的 `@gmi-openreview` / `gmi-openreview[bot]` 都可以。
+
+4. **不要**指望「一开 PR 就审」。必须 `@` 一次。
+
+首次 mention 之后，同一条讨论线程里再 `@` 一次也会继续走同一套处理。给机器人自己的回复点 👍 / ❤️ 会再跑一轮；点 👎 / 😕 会跳过并回一句说明。
+
+## 成功时你会看到什么
+
+按顺序：
+
+1. 你的评论上出现 **👀** 反应（已收到 mention）。  
+2. 机器人创建沙箱、拉 PR 分支、跑 agent。  
+3. 在同一条 PR 讨论里回帖（审阅说明；若 agent 改了文件，还可能往 PR 分支 push `openreview: apply changes`）。文末通常有 *Powered by OpenReview*。
+
+端到端仍依赖沙箱与模型后端；👀 只表示 webhook 和 mention 通了。若分支保护不让 App push，会回 **Skipped** 并说明原因，而不是默默失败。
+
+失败时常见是一条 **Error** 评论，里面有简短错误信息。
+
+## 排障
+
+| 现象 | 先查什么 |
+|---|---|
+| `@` 了完全没反应 | App **没装到这个仓库**；或评论写在普通 Issue 而不是 PR |
+| 其他账号装不上 | App 仍是私有；等 Horst-lgtm **Make public** |
+| 写了 `@openreview` 没反应 | slug 是 **`@gmi-openreview`** |
+| 开了 PR 但没审 | **预期行为**：必须评论 mention，不会因 `pull_request` opened 自动跑 |
+| 👀 都没有 | Webhook 到不了 `http://35.206.119.23:3000/api/webhooks`（GitHub App 设置 → Recent Deliveries） |
+| 有 👀 但没有回帖 | 沙箱/模型/分支保护；看 PR 上的 Error/Skipped 评论 |
+| 别的 GitHub 账号装了仍失败 | 安装时必须勾选目标仓；每个账号的 installation 是独立的 |
+
+App 配置与密钥只存在服务端，测试仓 README **不要**放 PEM、webhook secret 或 API key。
